@@ -30,10 +30,10 @@ func main() {
 	router.POST("/users/:id") // pay specific fine per user
 
 	var port string
-	if os.Getenv("$PORT") == "" {
+	if os.Getenv("PORT") == "" {
 		port = ":8000"
 	} else {
-		port = os.Getenv("$PORT")
+		port = os.Getenv("PORT")
 	}
 	log.Fatal(router.Run(port))
 }
