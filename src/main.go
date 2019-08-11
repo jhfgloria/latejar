@@ -31,9 +31,9 @@ func main() {
 
 	var port string
 	if os.Getenv("PORT") == "" {
-		port = ":8000"
+		port = "8000"
 	} else {
 		port = os.Getenv("PORT")
 	}
-	log.Fatal(router.Run(port))
+	log.Fatal(router.Run(":"+port))
 }
