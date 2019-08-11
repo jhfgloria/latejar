@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"log"
-	"net/http"
 	"os"
 )
 
@@ -14,9 +13,7 @@ func main() {
 	router.POST("/auth/sign-in")
 	router.POST("/auth/logout")
 
-	router.GET("/jars", func(ctx *gin.Context) {
-		ctx.JSON(http.StatusOK, gin.H{"message": "hello world"})
-	})        // get all jars
+	router.GET("/jars")        // get all jars
 	router.POST("/jars")       // create jar
 	router.GET("/jars/:id")    // get one jar
 	router.PUT("/jars/:id")    // update one jar
@@ -35,5 +32,5 @@ func main() {
 	} else {
 		port = os.Getenv("PORT")
 	}
-	log.Fatal(router.Run(":"+port))
+	log.Fatal(router.Run(":" + port))
 }
