@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -243,6 +244,54 @@ func CreateJar(db *sql.DB) func(ctx *gin.Context) {
 	}
 }
 
+func GetJar(db *sql.DB) func(ctx *gin.Context) {
+	return func(ctx *gin.Context) {
+		id := ctx.Param("id")
+
+		if id == "" {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "missing id in url"})
+			return
+		}
+
+		jid, err := strconv.Atoi(id)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "id should be of type number"})
+			return
+		}
+
+		var uid string
+		err = db.QueryRow("select id from users where email=$1", ctx.GetHeader("principal")).Scan(&uid)
+
+		var juId int
+		row := db.QueryRow("select id from jar_users where user_id=$1 and jar_id=$2", uid, jid)
+		err = row.Scan(&juId)
+
+		if err != nil {
+			ctx.Writer.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		jar := struct {
+			Id     int    `json:"id"`
+			Name   string `json:"name"`
+			Amount int    `json:"amount"`
+		}{}
+
+		err = db.QueryRow(
+			"select id, name, amount from jars where id=$1",
+			jid,
+		).Scan(&jar.Id, &jar.Name, &jar.Amount)
+
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, jar)
+		return
+	}
+}
+
 func main() {
 	dbURL := "postgres://postgres:postgres@localhost:5434/postgres?sslmode=disable"
 	db, _ := sql.Open("postgres", dbURL)
@@ -262,7 +311,7 @@ func main() {
 	{
 		api.POST("/jars", CreateJar(db)) // create jar
 		api.GET("/jars")                 // get all jars
-		api.GET("/jars/:id")             // get one jar
+		api.GET("/jars/:id", GetJar(db)) // get one jar
 		api.PUT("/jars/:id")             // update one jar
 		api.DELETE("/jars/:id")          // delete one jar
 		api.PATCH("/jars/:id")           // update jar's fine
