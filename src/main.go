@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -292,6 +293,86 @@ func GetJar(db *sql.DB) func(ctx *gin.Context) {
 	}
 }
 
+func GetAllJars(db *sql.DB) func(ctx *gin.Context) {
+	return func(ctx *gin.Context) {
+		var uid string
+		err := db.QueryRow("select id from users where email=$1", ctx.GetHeader("principal")).Scan(&uid)
+
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		var jIds []string
+		rows, err := db.Query("select jar_id from jar_users where user_id=$1", uid)
+
+		if rows == nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "something went wrong"})
+			return
+		}
+
+		defer rows.Close()
+		for rows.Next() {
+			var jId int
+			err = rows.Scan(&jId)
+
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			jIds = append(jIds, strconv.Itoa(jId))
+		}
+
+		var jars []struct {
+			Id     int    `json:"id"`
+			Name   string `json:"name"`
+			Admin  int    `json:"admin"`
+			Amount int    `json:"amount"`
+		}
+
+		if len(jIds) > 0 {
+			jarRows, err := db.Query(
+				fmt.Sprintf(
+					"select id, 'name', admin, amount from jars where id in (%s)",
+					strings.Join(jIds, ","),
+				),
+			)
+
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			defer jarRows.Close()
+			for jarRows.Next() {
+				jar := struct {
+					Id     int    `json:"id"`
+					Name   string `json:"name"`
+					Admin  int    `json:"admin"`
+					Amount int    `json:"amount"`
+				}{}
+
+				err = jarRows.Scan(&jar.Id, &jar.Name, &jar.Admin, &jar.Amount)
+
+				if err != nil {
+					ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+
+				jars = append(jars, jar)
+			}
+
+			ctx.JSON(http.StatusOK, gin.H{"jars": jars})
+			return
+		} else {
+			ctx.JSON(http.StatusOK, gin.H{"jars": []struct{}{}})
+			return
+		}
+
+	}
+}
+
 func main() {
 	dbURL := "postgres://postgres:postgres@localhost:5434/postgres?sslmode=disable"
 	db, _ := sql.Open("postgres", dbURL)
@@ -310,7 +391,7 @@ func main() {
 	api := router.Group("/api").Use(Authenticate())
 	{
 		api.POST("/jars", CreateJar(db)) // create jar
-		api.GET("/jars")                 // get all jars
+		api.GET("/jars", GetAllJars(db)) // get all jars
 		api.GET("/jars/:id", GetJar(db)) // get one jar
 		api.PUT("/jars/:id")             // update one jar
 		api.DELETE("/jars/:id")          // delete one jar
