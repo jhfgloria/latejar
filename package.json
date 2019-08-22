@@ -1,0 +1,19 @@
+{
+  "name": "latejar",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "pg:prod": "heroku pg:psql postgresql-colorful-51384 --app latejar"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jhfgloria/latejar.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jhfgloria/latejar/issues"
+  },
+  "homepage": "https://github.com/jhfgloria/latejar#readme"
+}
