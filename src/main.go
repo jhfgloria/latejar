@@ -374,8 +374,21 @@ func GetAllJars(db *sql.DB) func(ctx *gin.Context) {
 }
 
 func main() {
-	dbURL := "postgres://postgres:postgres@localhost:5434/postgres?sslmode=disable"
-	db, _ := sql.Open("postgres", dbURL)
+	var dbUrl string
+	if os.Getenv("DATABASE_URL") == "" {
+		dbUrl = "postgres://postgres:postgres@localhost:5434/postgres?sslmode=disable"
+	} else {
+		dbUrl = os.Getenv("DATABASE_URL")
+	}
+
+	var port string
+	if os.Getenv("PORT") == "" {
+		port = "8000"
+	} else {
+		port = os.Getenv("PORT")
+	}
+
+	db, _ := sql.Open("postgres", dbUrl)
 
 	router := gin.Default()
 
@@ -404,13 +417,6 @@ func main() {
 	router.NoRoute(func(c *gin.Context) {
 		c.HTML(http.StatusOK, "index.html", nil)
 	})
-
-	var port string
-	if os.Getenv("PORT") == "" {
-		port = "8000"
-	} else {
-		port = os.Getenv("PORT")
-	}
 
 	log.Fatal(router.Run(":" + port))
 }
