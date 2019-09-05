@@ -24,6 +24,7 @@ func Authenticate() gin.HandlerFunc {
 		auth := ctx.Request.Header.Get("Authorization")
 
 		if auth == "" {
+			println("Missing authorization header")
 			ctx.Writer.WriteHeader(http.StatusUnauthorized)
 			ctx.Abort()
 			return
@@ -334,7 +335,7 @@ func GetAllJars(db *sql.DB) func(ctx *gin.Context) {
 		if len(jIds) > 0 {
 			jarRows, err := db.Query(
 				fmt.Sprintf(
-					"select id, 'name', admin, amount from jars where id in (%s)",
+					"select id, name, admin, amount from jars where id in (%s)",
 					strings.Join(jIds, ","),
 				),
 			)
@@ -373,6 +374,124 @@ func GetAllJars(db *sql.DB) func(ctx *gin.Context) {
 	}
 }
 
+func GetAllUsersWithSearch(db *sql.DB) func(ctx *gin.Context) {
+	return func(ctx *gin.Context) {
+		search := ctx.Query("search")
+
+		if len(search) < 3 {
+			ctx.JSON(http.StatusPreconditionFailed, gin.H{"error": "search query param must have at least 3 characters"})
+			return
+		}
+
+		rows, err := db.Query("select id, name, email from users where email like '%' || $1 || '%'", search)
+
+		if rows == nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "something went wrong"})
+			return
+		}
+
+		var users []struct {
+			Id    int    `json:"id"`
+			Name  string `json:"name"`
+			Email string `json:"email"`
+		}
+
+		defer rows.Close()
+
+		for rows.Next() {
+			user := struct {
+				Id    int    `json:"id"`
+				Name  string `json:"name"`
+				Email string `json:"email"`
+			}{}
+			err = rows.Scan(&user.Id, &user.Name, &user.Email)
+
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			users = append(users, user)
+		}
+
+		if len(users) == 0 {
+			ctx.JSON(http.StatusOK, gin.H{"users": []struct{}{}})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{"users": users})
+		return
+	}
+}
+
+func InviteUser(db *sql.DB) func(ctx *gin.Context) {
+	return func(ctx *gin.Context) {
+		id := ctx.Param("id")
+
+		if id == "" {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "missing id in url"})
+			return
+		}
+
+		b, err := ioutil.ReadAll(ctx.Request.Body)
+		defer ctx.Request.Body.Close()
+
+		payload := struct {
+			UserId int `json:"userId"`
+		}{}
+		err = json.Unmarshal(b, &payload)
+
+		if err != nil {
+			ctx.JSON(http.StatusPreconditionFailed, gin.H{"error": "user id is missing in request"})
+			return
+		}
+
+		jid, err := strconv.Atoi(id)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "id should be of type number"})
+			return
+		}
+
+		var uid int
+		err = db.QueryRow("select id from users where email=$1", ctx.GetHeader("principal")).Scan(&uid)
+
+		if uid == payload.UserId {
+			ctx.JSON(http.StatusPreconditionFailed, gin.H{"error": "user can not invite herself"})
+			return
+		}
+
+		var juId int
+		row := db.QueryRow("select id from jar_users where user_id=$1 and jar_id=$2", uid, jid)
+		err = row.Scan(&juId)
+
+		if err != nil {
+			ctx.Writer.WriteHeader(http.StatusForbidden)
+			return
+		}
+
+		var invitedId string
+		err = db.QueryRow("select id from users where id=$1", payload.UserId).Scan(&invitedId)
+
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "no user with given userId"})
+			return
+		}
+
+		var relId int
+		err = db.QueryRow(
+			"insert into jar_users(jar_id, user_id) values($1, $2) returning id",
+			jid,
+			invitedId,
+		).Scan(&relId)
+
+		if err != nil {
+			ctx.JSON(http.StatusPreconditionFailed, gin.H{"error": err.Error()})
+			return
+		}
+
+		ctx.JSON(http.StatusCreated, gin.H{"relationId": relId})
+	}
+}
+
 func main() {
 	var dbUrl string
 	if os.Getenv("DATABASE_URL") == "" {
@@ -393,6 +512,7 @@ func main() {
 	router := gin.Default()
 
 	router.LoadHTMLGlob("static/*.html")
+	router.Static("assets", "./static")
 
 	auth := router.Group("/auth")
 	{
@@ -403,15 +523,16 @@ func main() {
 
 	api := router.Group("/api").Use(Authenticate())
 	{
-		api.POST("/jars", CreateJar(db)) // create jar
-		api.GET("/jars", GetAllJars(db)) // get all jars
-		api.GET("/jars/:id", GetJar(db)) // get one jar
-		api.PUT("/jars/:id")             // update one jar
-		api.DELETE("/jars/:id")          // delete one jar
-		api.PATCH("/jars/:id")           // update jar's fine
-		api.POST("/jars/:id/user/:id")   // fine user
-		api.POST("/jars/:id/invite")     // invite user(s) to jar
-		api.POST("/users/:id")           // pay specific fine per user
+		api.POST("/jars", CreateJar(db))             // create jar
+		api.GET("/jars", GetAllJars(db))             // get all jars
+		api.GET("/jars/:id", GetJar(db))             // get one jar
+		api.PUT("/jars/:id")                         // update one jar
+		api.DELETE("/jars/:id")                      // delete one jar
+		api.PATCH("/jars/:id")                       // update jar's fine
+		api.POST("/jars/:id/fine/:id")               // fine user
+		api.POST("/jars/:id/invite", InviteUser(db)) // invite user(s) to jar
+		api.GET("/users", GetAllUsersWithSearch(db)) // get all users
+		api.POST("/users/:id")                       // pay specific fine per user
 	}
 
 	router.NoRoute(func(c *gin.Context) {

@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "pg:prod": "heroku pg:psql postgresql-colorful-51384 --app latejar"
+    "pg:local": "docker exec -it latejar-postgres  psql -U postgres",
+    "pg:prod": "heroku pg:psql postgresql-colorful-51384 --app latejar",
+    "build:frontend": "cd ../latejar-web && npm run build && cp ./dist/main.js ../latejar/static && cd ../latejar"
   },
   "repository": {
     "type": "git",
